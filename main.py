@@ -12,8 +12,10 @@ import librosa.display
 import torch.nn as nn
 import torch.nn.functional as F
 import tarfile
+from tqdm import tqdm
 
-
+cuda = torch.cuda.is_available()
+device = torch.device("cuda" if cuda else "cpu")
 data_path = "./Data/genres_original"
 genres = os.listdir(data_path)
 
@@ -37,26 +39,85 @@ class audioData(Dataset):
                 self.raw.append(waveform)
                 self.rate.append(sample_rate)
                 self.label.append(genre)
+            break
 
     def __len__(self):
         return len(self.raw)
 
     def __getitem__(self, idx):
-        return self.raw[idx], self.rate[idx],self.label[idx]
+        return self.raw[idx], self.rate[idx], self.label[idx]
 #trainset include rawaudio samplerate and label
 train_set = audioData()
+print(train_set.raw[0])
+
+melspec = torchaudio.transforms.MelSpectrogram()(train_set.raw[0])
+print(melspec.shape)
+
 
 #dataloader for pytorch train
 train_load = DataLoader(train_set,batch_size=15,shuffle=True)
+
+
 
 #Number of class ex 2 class(jazz,country)
 All_class = set(train_set.label)
 numclass = len(All_class)
 
-'''
+#cnn
 class Model(nn.Module):
-    def __init__(self,Numclass):
+    '''
+        infomation
+        if youwant to convo with melspectrogram
+        input: mel(sft from waveform) [1,128,3309]
+
+        conv1d(input_channel,output_channel,kernel_size,stride,padding)
+        example conv1d(128,256,kennel_size=3)
+        returns torch[1,256,3307]
+
+        if you want to convo with raw waveform
+        unsqueeze data first to be 3dimension [1,1,661794]
+        input: waveform(raw audio) [1,1,661794]
+        convo1d(1,128,kernel_size =3)
+        return torch [1,128,661792]
+
+        input:[minibatch_size,channel,width]
+        in this case [15,1,667546]
+    '''
+    def __init__(self):
         super(Model, self).__init__()
-        self.Numclass = Numclass
-        self.C1 = nn.Conv2d()
+        self.conv1 = nn.Sequential(
+            nn.Conv1d(1, 128, kernel_size=3, stride=3, padding=0),
+            nn.BatchNorm1d(128),
+            nn.ReLU()
+        )
+    def forward(self,x):
+        x = self.conv1(x)
+
+        return x
+#model cuda input must be cuda || model cpu input must be cpu
+model = Model().cpu()
+criterion = nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(model.parameters(),lr=0.0001)
+num_epoch = 2
+
+for epoch in tqdm(range(num_epoch)):
+    for batch,(raw,rate,label) in enumerate(train_load):
+        # input [minibatchsize,channel,width]
+        raw = raw.cpu()
+        #label = label[0].to(device)
+        #forward pass
+        output = model(raw)
+
+        #loss = criterion(output,label)
+
+'''
+#train
+for batch,x in enumerate(train_load):
+    # X = [minibatchsize,channel,width]
+    conv2 = nn.Sequential(
+        nn.Conv1d(1, 128, kernel_size=3, stride=3, padding=0),
+        nn.BatchNorm1d(128),
+        nn.ReLU())
+    print(x[0].shape)
+    #print(conv2(x[0]))
 '''
